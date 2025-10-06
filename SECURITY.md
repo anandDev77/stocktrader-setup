@@ -22,3 +22,5 @@ We will acknowledge receipt within 3 business days and provide a remediation tim
 
 ## Disclosure
 Once a fix is available, we will publish a security advisory with mitigation steps and credit reporters who wish to be acknowledged.
+
+

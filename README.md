@@ -6,16 +6,13 @@ While the initial implementation targets Microsoft Azure, the repository is stru
 
 ## Repository layout
 
-- `azure/`: Complete Terraform for Microsoft Azure (AKS, PostgreSQL, Azure Cache, Istio add-on for AKS, plus app deployment). Start here if you want to run Stock Trader on Azure.
-- Other cloud provider directories will be added at the root as they become available (for example, `aws/`, `gcp/`).
+- `azure/`: Complete Terraform for Microsoft Azure (AKS, PostgreSQL, Azure Cache, Istio add-on for AKS, plus app deployment).
+- Additional providers will appear at the root (for example, `aws/`, `gcp/`). Each provider has its own README with prerequisites and steps.
 
-## Get started (Azure)
+## Cloud providers
 
-Head to the Azure setup guide:
-
-- `azure/README.md`
-
-That guide covers prerequisites, configuration, variables, and step-by-step apply/destroy instructions.
+- Azure: see `azure/README.md` for prerequisites, configuration, variables, and step-by-step apply/destroy instructions.
+- Others (coming soon): `aws/`, `gcp/`.
 
 ## Contributing
 

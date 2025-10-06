@@ -1,3 +1,26 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+*.tfvars.json
+*.tfplan
+terraform.tfstate
+terraform.tfstate.*
+crash.log
+override.tf
+override.tf.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Local outputs or artifacts
+output.txt
+
 # Local .terraform directories
 .terraform/
 
