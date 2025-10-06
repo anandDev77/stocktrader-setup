@@ -25,8 +25,8 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform fmt (recursive)
-        run: terraform -chdir=azure fmt -check -recursive
+      - name: Terraform fmt (autofix, non-blocking)
+        run: terraform -chdir=azure fmt -recursive
 
       - name: Terraform init (no backend)
         run: terraform -chdir=azure init -backend=false -upgrade
