@@ -140,8 +140,26 @@ resource "null_resource" "deploy_code" {
 			ZIP="${data.archive_file.function_package.output_path}"
 			APP="${var.function_app_name}"
 			RG="${var.resource_group_name}"
-			echo "Deploying package to $APP in $RG via zip deploy..."
-			az functionapp deployment source config-zip --resource-group "$RG" --name "$APP" --src "$ZIP" >/dev/null
+			
+			# Retry logic for transient Kudu restart errors
+			MAX_RETRIES=3
+			RETRY_DELAY=30
+			
+			for attempt in $(seq 1 $MAX_RETRIES); do
+				echo "Deploying package to $APP in $RG via zip deploy... (attempt $attempt/$MAX_RETRIES)"
+				if az functionapp deployment source config-zip --resource-group "$RG" --name "$APP" --src "$ZIP" 2>&1; then
+					echo "Deployment successful!"
+					break
+				else
+					if [ $attempt -eq $MAX_RETRIES ]; then
+						echo "ERROR: Deployment failed after $MAX_RETRIES attempts"
+						exit 1
+					fi
+					echo "Deployment failed, waiting $RETRY_DELAY seconds before retry..."
+					sleep $RETRY_DELAY
+				fi
+			done
+			
 			# Best-effort trigger sync
 			az functionapp sync-triggers --resource-group "$RG" --name "$APP" >/dev/null || true
 		EOT

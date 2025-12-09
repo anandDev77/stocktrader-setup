@@ -58,3 +58,11 @@ spec:
         host: gitops-stocktrader-cash-account-service.${stock_trader_namespace}.svc.cluster.local
         port:
           number: 8080
+  - match:
+    - uri:
+        prefix: "/sentiment-dashboard"
+    route:
+    - destination:
+        host: gitops-stocktrader-sentiment-dashboard-service.${stock_trader_namespace}.svc.cluster.local
+        port:
+          number: 8501

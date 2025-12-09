@@ -593,3 +593,174 @@ variable "credentials_secret_name" {
     error_message = "Secret name must contain only lowercase letters, numbers, and hyphens."
   }
 }
+
+# ----------------------------------------------------------------------------------
+# DATA SOURCE API KEYS
+# ----------------------------------------------------------------------------------
+# These variables configure API keys for external data sources used by the
+# sentiment analysis service. If you don't have API keys, use placeholder values
+# and the app will gracefully handle missing data sources.
+# ----------------------------------------------------------------------------------
+
+variable "alpha_vantage_api_key" {
+  description = "Alpha Vantage API key for stock data. Get a free key at https://www.alphavantage.co/support/#api-key"
+  type        = string
+  default     = "PLACEHOLDER-GET-KEY-FROM-ALPHAVANTAGE"
+  sensitive   = true
+}
+
+variable "finnhub_api_key" {
+  description = "Finnhub API key for stock news and data. Get a free key at https://finnhub.io/register"
+  type        = string
+  default     = "PLACEHOLDER-GET-KEY-FROM-FINNHUB"
+  sensitive   = true
+}
+
+# ----------------------------------------------------------------------------------
+# SENTIMENT DASHBOARD CONFIGURATION
+# ----------------------------------------------------------------------------------
+# These variables configure the sentiment analysis dashboard and its backing
+# Azure OpenAI and Azure AI Search services.
+#
+# Two modes of operation:
+# 1. Create new resources: Set use_existing_* = false (default)
+# 2. Use existing resources: Set use_existing_* = true and provide resource details
+#
+# The services can be in a different resource group or even a different subscription
+# (as long as the service principal has access).
+# ----------------------------------------------------------------------------------
+
+variable "enable_sentiment_dashboard" {
+  description = "Enable sentiment analysis dashboard and services (Azure OpenAI + AI Search)"
+  type        = bool
+  default     = false
+}
+
+variable "sentiment_resource_group_name" {
+  description = "Resource group for sentiment services (Azure OpenAI + AI Search). This is typically a separate RG from the main infrastructure."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_sentiment_dashboard || var.sentiment_resource_group_name != ""
+    error_message = "sentiment_resource_group_name is required when enable_sentiment_dashboard = true."
+  }
+}
+
+# =============================================================================
+# AZURE OPENAI CONFIGURATION
+# =============================================================================
+
+variable "sentiment_use_existing_openai" {
+  description = "Use an existing Azure OpenAI service instead of creating a new one"
+  type        = bool
+  default     = false
+}
+
+variable "sentiment_existing_openai_name" {
+  description = "Name of existing Azure OpenAI service (required if sentiment_use_existing_openai = true)"
+  type        = string
+  default     = ""
+}
+
+variable "sentiment_existing_openai_resource_group" {
+  description = "Resource group of existing Azure OpenAI service (required if sentiment_use_existing_openai = true)"
+  type        = string
+  default     = ""
+}
+
+variable "sentiment_openai_service_name" {
+  description = "Name for new Azure OpenAI service (if creating new)"
+  type        = string
+  default     = "stock-sentiment-openai"
+}
+
+variable "sentiment_openai_deployment_name" {
+  description = "Name of the GPT model deployment"
+  type        = string
+  default     = "gpt-4o"
+}
+
+variable "sentiment_openai_model_name" {
+  description = "Name of the OpenAI model to deploy"
+  type        = string
+  default     = "gpt-4o"
+}
+
+variable "sentiment_openai_model_version" {
+  description = "Version of the OpenAI model to deploy"
+  type        = string
+  default     = "2024-08-06"
+}
+
+variable "sentiment_openai_api_version" {
+  description = "Azure OpenAI API version"
+  type        = string
+  default     = "2023-05-15"
+}
+
+variable "sentiment_openai_embedding_deployment_name" {
+  description = "Name of the embedding model deployment"
+  type        = string
+  default     = "text-embedding-ada-002"
+}
+
+# =============================================================================
+# AZURE AI SEARCH CONFIGURATION
+# =============================================================================
+
+variable "sentiment_use_existing_search" {
+  description = "Use an existing Azure AI Search service instead of creating a new one"
+  type        = bool
+  default     = false
+}
+
+variable "sentiment_existing_search_name" {
+  description = "Name of existing Azure AI Search service (required if sentiment_use_existing_search = true)"
+  type        = string
+  default     = ""
+}
+
+variable "sentiment_existing_search_resource_group" {
+  description = "Resource group of existing Azure AI Search service (required if sentiment_use_existing_search = true)"
+  type        = string
+  default     = ""
+}
+
+variable "sentiment_search_service_name" {
+  description = "Name for new Azure AI Search service (if creating new)"
+  type        = string
+  default     = "stock-sentiment-search"
+}
+
+variable "sentiment_search_sku" {
+  description = "SKU for Azure AI Search service (free, basic, standard, standard2, standard3)"
+  type        = string
+  default     = "free"
+
+  validation {
+    condition     = contains(["free", "basic", "standard", "standard2", "standard3"], var.sentiment_search_sku)
+    error_message = "Search SKU must be one of: free, basic, standard, standard2, standard3."
+  }
+}
+
+variable "sentiment_search_index_name" {
+  description = "Name of the search index for RAG"
+  type        = string
+  default     = "stock-articles"
+}
+
+# =============================================================================
+# RAG CONFIGURATION
+# =============================================================================
+
+variable "sentiment_rag_top_k" {
+  description = "Number of top results to retrieve from RAG"
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.sentiment_rag_top_k >= 1 && var.sentiment_rag_top_k <= 10
+    error_message = "RAG top_k must be between 1 and 10."
+  }
+}

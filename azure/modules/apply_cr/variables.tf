@@ -114,3 +114,55 @@ variable "couchdb_database_name" { type = string }
 # Hostname of the PostgreSQL database server
 variable "database_host" { type = string }
 
+# =============================================================================
+# SENTIMENT DASHBOARD CONFIGURATION VARIABLES
+# =============================================================================
+
+variable "sentiment_enabled" {
+  description = "Enable sentiment analysis dashboard"
+  type        = bool
+  default     = false
+}
+
+variable "sentiment_openai_endpoint" {
+  description = "Azure OpenAI service endpoint"
+  type        = string
+  default     = ""
+}
+
+variable "sentiment_openai_deployment_name" {
+  description = "Azure OpenAI GPT model deployment name"
+  type        = string
+  default     = "gpt-4o"
+}
+
+variable "sentiment_openai_api_version" {
+  description = "Azure OpenAI API version"
+  type        = string
+  default     = "2023-05-15"
+}
+
+variable "sentiment_openai_embedding_deployment" {
+  description = "Azure OpenAI embedding model deployment name"
+  type        = string
+  default     = "text-embedding-ada-002"
+}
+
+variable "sentiment_search_endpoint" {
+  description = "Azure AI Search service endpoint"
+  type        = string
+  default     = ""
+}
+
+variable "sentiment_search_index_name" {
+  description = "Azure AI Search index name for RAG"
+  type        = string
+  default     = "stock-articles"
+}
+
+variable "sentiment_rag_top_k" {
+  description = "Number of top results to retrieve from RAG"
+  type        = number
+  default     = 3
+}
+

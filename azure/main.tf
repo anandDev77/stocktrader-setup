@@ -234,7 +234,61 @@ module "apply_cr" {
   # Database host for CR YAML template
   database_host = module.postgres.fqdn
 
-  depends_on = [module.k8s_bootstrap, module.external_secrets, module.function_app]
+  # Sentiment Dashboard configuration
+  sentiment_enabled                    = var.enable_sentiment_dashboard
+  sentiment_openai_endpoint            = var.enable_sentiment_dashboard ? module.sentiment_services[0].openai_endpoint : ""
+  sentiment_openai_deployment_name     = var.enable_sentiment_dashboard ? module.sentiment_services[0].openai_deployment_name : ""
+  sentiment_openai_api_version         = var.enable_sentiment_dashboard ? module.sentiment_services[0].openai_api_version : ""
+  sentiment_openai_embedding_deployment = var.enable_sentiment_dashboard ? module.sentiment_services[0].openai_embedding_deployment_name : ""
+  sentiment_search_endpoint            = var.enable_sentiment_dashboard ? module.sentiment_services[0].search_endpoint : ""
+  sentiment_search_index_name          = var.enable_sentiment_dashboard ? module.sentiment_services[0].search_index_name : ""
+  sentiment_rag_top_k                  = var.sentiment_rag_top_k
+
+  depends_on = [module.k8s_bootstrap, module.external_secrets, module.function_app, module.sentiment_services]
+}
+
+# ----------------------------------------------------------------------------------
+# SENTIMENT SERVICES MODULE
+# ----------------------------------------------------------------------------------
+# Provisions Azure OpenAI and Azure AI Search services for the Stock Trader
+# sentiment analysis dashboard. This module can:
+# - Create new Azure OpenAI and AI Search resources OR
+# - Reference existing resources in any resource group
+# - Automatically output endpoints and API keys for Key Vault
+# ----------------------------------------------------------------------------------
+module "sentiment_services" {
+  source = "./modules/sentiment_services"
+  count  = var.enable_sentiment_dashboard ? 1 : 0
+
+  enabled         = var.enable_sentiment_dashboard
+  subscription_id = var.subscription_id
+  location        = var.location
+  # Sentiment services are typically in a separate resource group
+  resource_group_name = var.sentiment_resource_group_name
+
+  tags = merge(local.common_tags, { ServiceType = "AI" })
+
+  # Azure OpenAI configuration
+  use_existing_openai            = var.sentiment_use_existing_openai
+  existing_openai_name           = var.sentiment_existing_openai_name
+  existing_openai_resource_group = var.sentiment_existing_openai_resource_group
+  openai_service_name            = var.sentiment_openai_service_name
+  openai_deployment_name         = var.sentiment_openai_deployment_name
+  openai_model_name              = var.sentiment_openai_model_name
+  openai_model_version           = var.sentiment_openai_model_version
+  openai_api_version             = var.sentiment_openai_api_version
+  openai_embedding_deployment_name = var.sentiment_openai_embedding_deployment_name
+
+  # Azure AI Search configuration
+  use_existing_search            = var.sentiment_use_existing_search
+  existing_search_name           = var.sentiment_existing_search_name
+  existing_search_resource_group = var.sentiment_existing_search_resource_group
+  search_service_name            = var.sentiment_search_service_name
+  search_sku                     = var.sentiment_search_sku
+  search_index_name              = var.sentiment_search_index_name
+
+  # RAG configuration
+  rag_top_k = var.sentiment_rag_top_k
 }
 
 # ----------------------------------------------------------------------------------
@@ -269,8 +323,37 @@ module "key_vault" {
     {
       # Computed from our deployed resources
       "redis-url" : "rediss://:${module.redis.primary_access_key}@${module.redis.hostname}:6380",
+    },
+    # Azure OpenAI & AI Search secrets - from sentiment_services module or placeholders
+    var.enable_sentiment_dashboard ? {
+      "azure-openai-endpoint" : module.sentiment_services[0].openai_endpoint,
+      "azure-openai-apiKey" : module.sentiment_services[0].openai_api_key,
+      "azure-openai-deploymentName" : module.sentiment_services[0].openai_deployment_name,
+      "azure-openai-apiVersion" : module.sentiment_services[0].openai_api_version,
+      "azure-openai-embeddingDeployment" : module.sentiment_services[0].openai_embedding_deployment_name,
+      "azure-aiSearch-endpoint" : module.sentiment_services[0].search_endpoint,
+      "azure-aiSearch-apiKey" : module.sentiment_services[0].search_api_key,
+      "azure-aiSearch-indexName" : module.sentiment_services[0].search_index_name,
+    } : {
+      # Placeholders when sentiment dashboard is disabled (ESO still needs keys to exist)
+      "azure-openai-endpoint" : "disabled",
+      "azure-openai-apiKey" : "disabled",
+      "azure-openai-deploymentName" : "disabled",
+      "azure-openai-apiVersion" : "disabled",
+      "azure-openai-embeddingDeployment" : "disabled",
+      "azure-aiSearch-endpoint" : "disabled",
+      "azure-aiSearch-apiKey" : "disabled",
+      "azure-aiSearch-indexName" : "disabled",
+    },
+    {
+      # Data source API keys - user must provide actual values
+      # These are optional for the app but required for ESO to create the secret
+      "dataSource-alphaVantage-apiKey" : var.alpha_vantage_api_key,
+      "dataSource-finnhub-apiKey" : var.finnhub_api_key,
     }
   )
+
+  depends_on = [module.sentiment_services]
 }
 
 # ----------------------------------------------------------------------------------

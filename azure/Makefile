@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: init fmt validate plan apply destroy precheck postcheck lint app-url func-url
+.PHONY: init fmt validate plan apply destroy precheck postcheck lint app-url func-url dashboard-url
 
 init:
 	terraform init
@@ -66,4 +66,19 @@ func-url:
 	KEY=$$(az functionapp function keys list --name "$$APP" --resource-group "$$RG" --function-name stock_quote -o tsv --query default 2>/dev/null | tr -d '\n' || true); \
 	if [ -z "$$KEY" ]; then echo "Could not fetch function key. Ensure the app exists and you are logged into Azure (az login)."; exit 1; fi; \
 	echo "https://$$APP.azurewebsites.net/api/stock_quote?code=$$KEY"
+
+# Print sentiment dashboard URL
+dashboard-url:
+	@ENABLE_ISTIO=$$(grep '^enable_istio' terraform.tfvars 2>/dev/null | awk -F= '{print $$2}' | cut -d'#' -f1 | tr -d ' "' || echo "true"); \
+	if [ "$$ENABLE_ISTIO" = "true" ]; then \
+	  URL=$$(terraform output -raw istio_ingress_external_url_https 2>/dev/null || true); \
+	  if [ -n "$$URL" ] && [ "$$URL" != "null" ]; then \
+	    echo "$$URL/sentiment-dashboard"; \
+	  else \
+	    IP=$$(kubectl -n aks-istio-ingress get svc aks-istio-ingressgateway-external -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true); \
+	    if [ -n "$$IP" ]; then echo "https://$$IP/sentiment-dashboard"; else echo "Dashboard URL not available yet"; fi; \
+	  fi; \
+	else \
+	  echo "Istio is disabled. Dashboard requires Istio for external access."; \
+	fi
 

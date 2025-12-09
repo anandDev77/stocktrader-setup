@@ -253,6 +253,72 @@ aks_pod_cidr = "10.201.0.0/16"
 aks_dns_service_ip = "10.200.0.10"
 
 # =============================================================================
+# SENTIMENT DASHBOARD CONFIGURATION (OPTIONAL)
+# =============================================================================
+# The sentiment analysis dashboard requires Azure OpenAI and Azure AI Search.
+# You can either create new resources or use existing ones.
+#
+# NOTE: This is optional. Set enable_sentiment_dashboard = false to disable.
+# =============================================================================
+
+# Enable/disable the sentiment analysis dashboard
+# When enabled, Azure OpenAI and AI Search will be provisioned automatically
+enable_sentiment_dashboard = false
+
+# Resource group for sentiment services (REQUIRED when enable_sentiment_dashboard = true)
+# This is typically a separate RG from the main infrastructure
+# NOTE: This resource group must exist before running Terraform
+sentiment_resource_group_name = ""
+
+# -----------------------------------------------------------------------------
+# Option A: Create NEW Azure OpenAI and AI Search resources (DEFAULT)
+# -----------------------------------------------------------------------------
+# When use_existing_* = false (default), new resources will be created.
+# You can customize the names below:
+
+# sentiment_openai_service_name = "stock-sentiment-openai"
+# sentiment_openai_deployment_name = "gpt-4o"
+# sentiment_openai_model_name = "gpt-4o"
+# sentiment_openai_model_version = "2024-08-06"
+# sentiment_search_service_name = "stock-sentiment-search"
+# sentiment_search_sku = "free"  # free, basic, standard
+# sentiment_search_index_name = "stock-articles"
+
+# -----------------------------------------------------------------------------
+# Option B: Use EXISTING Azure OpenAI (from another resource group)
+# -----------------------------------------------------------------------------
+# Set these if you already have Azure OpenAI deployed elsewhere:
+
+# sentiment_use_existing_openai = true
+# sentiment_existing_openai_name = "my-existing-openai-service"
+# sentiment_existing_openai_resource_group = "my-ai-resource-group"
+
+# -----------------------------------------------------------------------------
+# Option C: Use EXISTING Azure AI Search (from another resource group)
+# -----------------------------------------------------------------------------
+# Set these if you already have Azure AI Search deployed elsewhere:
+
+# sentiment_use_existing_search = true
+# sentiment_existing_search_name = "my-existing-search-service"
+# sentiment_existing_search_resource_group = "my-ai-resource-group"
+
+# =============================================================================
+# DATA SOURCE API KEYS (OPTIONAL)
+# =============================================================================
+# These API keys enable stock data and news retrieval for sentiment analysis.
+# If not provided, placeholder values will be used and the app will gracefully
+# handle missing data sources.
+# =============================================================================
+
+# Alpha Vantage API key for stock data
+# Get a free key at: https://www.alphavantage.co/support/#api-key
+# alpha_vantage_api_key = "YOUR-ALPHA-VANTAGE-API-KEY"
+
+# Finnhub API key for stock news and data
+# Get a free key at: https://finnhub.io/register
+# finnhub_api_key = "YOUR-FINNHUB-API-KEY"
+
+# =============================================================================
 # DEPLOYMENT NOTES
 # =============================================================================
 #
@@ -270,11 +336,15 @@ aks_dns_service_ip = "10.200.0.10"
 # 4. Deploy the infrastructure:
 #    make apply
 #
+#    NOTE: If enable_sentiment_dashboard = true, Azure OpenAI and AI Search
+#    will be automatically provisioned during this step.
+#
 # 5. Verify the deployment:
 #    make postcheck
 #
 # 6. Access the application:
 #    make app-url
+#    make dashboard-url
 #
 # For troubleshooting and additional information:
 # - Architecture details: ARCHITECTURE.md

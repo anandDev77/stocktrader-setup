@@ -105,89 +105,15 @@ resource "kubernetes_service" "couchdb" {
 }
 
 # ----------------------------------------------------------------------------------
-# COUCHDB OPERATOR RESOURCES
+# COUCHDB OPERATOR RESOURCES (DISABLED)
 # ----------------------------------------------------------------------------------
-# These resources deploy the CouchDB Operator using OLM (Operator Lifecycle Manager)
-# for automated database management and lifecycle operations.
+# NOTE: The CouchDB operator catalog image (quay.io/couchdb/couchdb-operator-catalog)
+# is no longer publicly accessible (returns 401 UNAUTHORIZED). CouchDB is deployed
+# directly via Kubernetes resources above instead of using the operator.
 #
-# Key Features:
-# - Operator-based database management
-# - Automated lifecycle operations
-# - OLM integration for operator deployment
-# - Catalog source and subscription management
-# - Automated installation and updates
+# The resources below are commented out but kept for reference in case the catalog
+# becomes available again in the future.
 # ----------------------------------------------------------------------------------
 
-# Use terraform_data with kubectl commands instead of kubernetes_manifest
-# This approach is more reliable when the Kubernetes provider might not be fully configured
-
-# CouchDB Operator Group
-resource "terraform_data" "couchdb_operator_group" {
-  provisioner "local-exec" {
-    command     = <<EOT
-      # Set up kubectl access to AKS cluster
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
-      
-      # Apply the OperatorGroup
-      kubectl apply -f - <<EOF
-apiVersion: operators.coreos.com/v1
-kind: OperatorGroup
-metadata:
-  name: couchdb-operator-group
-  namespace: ${var.couchdb_namespace}
-spec:
-  targetNamespaces:
-  - ${var.couchdb_namespace}
-EOF
-    EOT
-    interpreter = ["/bin/bash", "-c"]
-  }
-  depends_on = [kubernetes_namespace.couchdb]
-}
-
-# CouchDB Catalog Source
-resource "terraform_data" "couchdb_catalog_source" {
-  provisioner "local-exec" {
-    command     = <<EOT
-      kubectl apply -f - <<EOF
-apiVersion: operators.coreos.com/v1alpha1
-kind: CatalogSource
-metadata:
-  name: couchdb-operator-catalog
-  namespace: ${var.olm_namespace}
-spec:
-  sourceType: grpc
-  image: quay.io/couchdb/couchdb-operator-catalog:latest
-  displayName: CouchDB Operator Catalog
-  publisher: CouchDB
-EOF
-    EOT
-    interpreter = ["/bin/bash", "-c"]
-  }
-  depends_on = [kubernetes_namespace.couchdb]
-}
-
-# CouchDB Operator Subscription
-resource "terraform_data" "couchdb_subscription" {
-  provisioner "local-exec" {
-    command     = <<EOT
-      kubectl apply -f - <<EOF
-apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  name: couchdb-operator
-  namespace: ${var.couchdb_namespace}
-spec:
-  channel: stable
-  name: couchdb-operator
-  source: couchdb-operator-catalog
-  sourceNamespace: ${var.olm_namespace}
-  installPlanApproval: Automatic
-EOF
-    EOT
-    interpreter = ["/bin/bash", "-c"]
-  }
-  depends_on = [terraform_data.couchdb_operator_group, terraform_data.couchdb_catalog_source]
-}
+# CouchDB is deployed via kubernetes_deployment above, no operator needed
 

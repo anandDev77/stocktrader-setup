@@ -224,8 +224,8 @@ spec:
     cpuThreshold: 75
     enabled: true
     image:
-      repository: ghcr.io/ibmstocktrader/trader
-      tag: 1.0.0
+      repository: ghcr.io/ananddev77/trader
+      tag: sentimentanalysis-69ab843
     maxReplicas: 10
     replicas: 1
   tradeHistory:
@@ -243,8 +243,8 @@ spec:
     cpuThreshold: 75
     enabled: false
     image:
-      repository: ghcr.io/ibmstocktrader/tradr
-      tag: 1.0.0
+      repository: ghcr.io/ananddev77/trader
+      tag: sentimentanalysis-1ddfeae
     maxReplicas: 10
     replicas: 1
   looper:
@@ -278,8 +278,8 @@ spec:
     autoscale: false
     cpuThreshold: 75
     image:
-      repository: ghcr.io/ibmstocktrader/broker
-      tag: 1.0.0
+      repository: ghcr.io/ananddev77/broker
+      tag: sentimentanalysis-b7516f7
     maxReplicas: 10
     replicas: 1
     url: http://{{ .Release.Name }}-broker-service:9080/broker
@@ -304,3 +304,41 @@ spec:
     maxReplicas: 10
     replicas: 1
     url: http://{{ .Release.Name }}-stock-quote-service:9080/stock-quote
+  sentiment:
+    enabled: ${sentiment_enabled}
+    autoscale: false
+    cpuThreshold: 75
+    image:
+      repository: ghcr.io/ananddev77/stock-sentiment-api
+      tag: sentimentanalysis-f903fe8
+    maxReplicas: 10
+    replicas: 1
+    url: http://{{ .Release.Name }}-sentiment-api-service:8000
+    dashboard:
+      enabled: ${sentiment_enabled}
+      image:
+        repository: ghcr.io/ananddev77/stock-sentiment-dashboard
+        tag: sentimentanalysis-f903fe8
+    dashboardUrl: /sentiment-dashboard  # Istio gateway path (relative path works from same origin as trader)
+  # Azure OpenAI - apiKey comes from Key Vault via ESO
+  # endpoint is set via Terraform sentiment_services module
+  azureOpenAI:
+    endpoint: "${sentiment_openai_endpoint}"
+    deploymentName: ${sentiment_openai_deployment_name}
+    apiVersion: ${sentiment_openai_api_version}
+    embeddingDeployment: ${sentiment_openai_embedding_deployment}
+  # Azure AI Search - apiKey comes from Key Vault via ESO
+  # endpoint is set via Terraform sentiment_services module
+  azureAISearch:
+    endpoint: "${sentiment_search_endpoint}"
+    indexName: ${sentiment_search_index_name}
+  rag:
+    topK: ${sentiment_rag_top_k}
+  # Data sources - API keys come from Key Vault via ESO
+  dataSources:
+    reddit:
+      enabled: false
+    alphaVantage:
+      enabled: true
+    finnhub:
+      enabled: true

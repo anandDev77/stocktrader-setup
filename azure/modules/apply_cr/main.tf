@@ -13,7 +13,50 @@
 # - Istio service mesh integration for traffic management
 # - SSL/TLS certificate generation and management
 # - Gateway and VirtualService configuration
+#
+# KUBECONFIG MANAGEMENT:
+# This module uses an ISOLATED kubeconfig file to prevent corruption from parallel
+# writes. The kubeconfig is initialized ONCE, then all subsequent kubectl commands
+# just READ from it (no more az aks get-credentials calls).
 # ----------------------------------------------------------------------------------
+
+# Local variables for isolated kubeconfig management
+locals {
+  # Dedicated kubeconfig file - isolated from user's ~/.kube/config
+  kubeconfig_path = "${path.module}/.terraform-kubeconfig"
+}
+
+# Initialize kubeconfig ONCE at the start - all other resources depend on this
+resource "terraform_data" "init_kubeconfig" {
+  provisioner "local-exec" {
+    command = <<EOT
+      set -e
+      az account set --subscription ${var.subscription_id}
+      
+      # Create isolated kubeconfig file for this module
+      # This prevents corruption of ~/.kube/config from parallel access
+      KUBECONFIG="${local.kubeconfig_path}" az aks get-credentials \
+        --resource-group ${var.resource_group_name} \
+        --name ${var.aks_cluster_name} \
+        --overwrite-existing
+      
+      # Verify the kubeconfig works
+      KUBECONFIG="${local.kubeconfig_path}" kubectl cluster-info > /dev/null 2>&1 || {
+        echo "ERROR: Failed to connect to cluster with initialized kubeconfig"
+        exit 1
+      }
+      
+      echo "Isolated kubeconfig initialized successfully at ${local.kubeconfig_path}"
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+  }
+
+  # Cleanup kubeconfig on destroy
+  provisioner "local-exec" {
+    when    = destroy
+    command = "rm -f ${path.module}/.terraform-kubeconfig 2>/dev/null || true"
+  }
+}
 
 # Custom Resource YAML Template Rendering
 resource "local_file" "cr_yaml" {
@@ -28,6 +71,15 @@ resource "local_file" "cr_yaml" {
     couchdb_database_name   = var.couchdb_database_name
     credentials_secret_name = var.credentials_secret_name
     database_host           = var.database_host
+    # Sentiment Dashboard configuration
+    sentiment_enabled                   = var.sentiment_enabled
+    sentiment_openai_endpoint           = var.sentiment_openai_endpoint
+    sentiment_openai_deployment_name    = var.sentiment_openai_deployment_name
+    sentiment_openai_api_version        = var.sentiment_openai_api_version
+    sentiment_openai_embedding_deployment = var.sentiment_openai_embedding_deployment
+    sentiment_search_endpoint           = var.sentiment_search_endpoint
+    sentiment_search_index_name         = var.sentiment_search_index_name
+    sentiment_rag_top_k                 = var.sentiment_rag_top_k
   })
   filename = "${path.module}/cr_${var.namespace}.yaml"
 }
@@ -37,8 +89,7 @@ resource "terraform_data" "apply_cr_yaml" {
   provisioner "local-exec" {
     command     = <<EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
       
       # Wait for StockTrader CRD to be available with retry logic
       echo "Waiting for StockTrader CRD to be available..."
@@ -73,7 +124,7 @@ resource "terraform_data" "apply_cr_yaml" {
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
-  depends_on = [local_file.cr_yaml]
+  depends_on = [local_file.cr_yaml, terraform_data.init_kubeconfig]
 }
 
 
@@ -84,8 +135,8 @@ resource "terraform_data" "rollout_restart" {
   provisioner "local-exec" {
     command     = <<EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
+      
       for i in {1..30}; do
         if kubectl -n ${var.istio_ingress_namespace} get svc ${var.istio_ingress_external_service_name} >/dev/null 2>&1; then
           break
@@ -112,8 +163,7 @@ resource "terraform_data" "apply_peer_auth" {
   provisioner "local-exec" {
     command     = <<EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
       kubectl apply -f ${local_file.peer_auth_yaml[0].filename}
     EOT
     interpreter = ["/bin/bash", "-c"]
@@ -137,8 +187,7 @@ resource "terraform_data" "generate_ssl_certificates" {
   provisioner "local-exec" {
     command     = <<EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
       
       # Wait for external IP to be assigned
       for i in {1..30}; do
@@ -151,12 +200,25 @@ resource "terraform_data" "generate_ssl_certificates" {
         sleep 10
       done
       
+      # Fail if no external IP was found
+      if [ -z "$EXTERNAL_IP" ] || [ "$EXTERNAL_IP" = "null" ]; then
+        echo "ERROR: Could not get external IP for Istio ingress gateway after 30 attempts"
+        echo "Please check if the ${var.istio_ingress_external_service_name} service exists in ${var.istio_ingress_namespace} namespace"
+        echo "Kubeconfig: ${local.kubeconfig_path}"
+        kubectl get svc -n ${var.istio_ingress_namespace} || true
+        exit 1
+      fi
+      
       # Generate certificates with the external IP
+      # NOTE: Modern TLS requires SAN (Subject Alternative Name) for IP addresses
       mkdir -p ${path.module}/certs
       openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:2048 \
         -subj "/O=Stock Trader/CN=$EXTERNAL_IP" \
+        -addext "subjectAltName=IP:$EXTERNAL_IP" \
         -keyout ${path.module}/certs/stock-trader.key \
         -out ${path.module}/certs/stock-trader.crt
+      
+      echo "Certificate generated successfully for IP: $EXTERNAL_IP"
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
@@ -169,8 +231,7 @@ resource "terraform_data" "create_tls_secret" {
   provisioner "local-exec" {
     command     = <<EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
       
       # Create TLS secret in stock-trader namespace (where the Gateway is deployed)
       kubectl create secret tls stock-trader-tls \
@@ -185,6 +246,8 @@ resource "terraform_data" "create_tls_secret" {
         --cert=${path.module}/certs/stock-trader.crt \
         -n ${var.istio_ingress_namespace} \
         --dry-run=client -o yaml | kubectl apply -f -
+      
+      echo "TLS secrets created successfully"
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
@@ -197,12 +260,41 @@ resource "terraform_data" "apply_istio_gateway" {
   provisioner "local-exec" {
     command     = <<EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
       kubectl apply -f ${local_file.istio_gateway_yaml[0].filename}
+      echo "Istio Gateway applied successfully"
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
   depends_on = [local_file.istio_gateway_yaml, terraform_data.create_tls_secret, terraform_data.apply_peer_auth]
+}
+
+# Final rollout restart to ensure pods pick up private endpoint DNS after everything is configured
+# This addresses timing issues where pods start before private endpoints are fully propagated
+resource "terraform_data" "final_rollout_restart" {
+  provisioner "local-exec" {
+    command     = <<EOT
+      set -e
+      export KUBECONFIG="${local.kubeconfig_path}"
+      
+      echo "Waiting 30 seconds for private endpoint DNS to fully propagate..."
+      sleep 30
+      
+      echo "Performing final rollout restart to ensure pods connect to private endpoints..."
+      for d in $(kubectl -n ${var.namespace} get deploy -o name 2>/dev/null || true); do 
+        kubectl -n ${var.namespace} rollout restart $d || true
+      done
+      
+      echo "Waiting for deployments to be ready..."
+      kubectl -n ${var.namespace} rollout status deployment --timeout=300s || true
+      
+      echo "Final rollout restart complete"
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+  }
+  depends_on = [
+    terraform_data.apply_cr_yaml,
+    terraform_data.apply_istio_gateway
+  ]
 }
 

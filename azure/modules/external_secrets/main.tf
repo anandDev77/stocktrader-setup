@@ -13,15 +13,49 @@
 # - Integration with Azure Key Vault for centralized secret management
 # - RBAC and access control for secret access
 # - Helm-based deployment with CRD installation
+#
+# KUBECONFIG MANAGEMENT:
+# This module uses an ISOLATED kubeconfig file to prevent corruption from parallel
+# writes. The kubeconfig is initialized ONCE, then all subsequent kubectl/helm commands
+# just READ from it.
 # ----------------------------------------------------------------------------------
+
+# Local variables for isolated kubeconfig management
+locals {
+  kubeconfig_path = "${path.module}/.terraform-kubeconfig"
+}
+
+# Initialize kubeconfig ONCE at the start - all other resources depend on this
+resource "terraform_data" "init_kubeconfig" {
+  provisioner "local-exec" {
+    command = <<EOT
+      set -e
+      az account set --subscription ${var.subscription_id}
+      
+      # Create isolated kubeconfig file for this module
+      KUBECONFIG="${local.kubeconfig_path}" az aks get-credentials \
+        --resource-group ${var.resource_group_name} \
+        --name ${var.aks_cluster_name} \
+        --overwrite-existing
+      
+      echo "Isolated kubeconfig initialized at ${local.kubeconfig_path}"
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "rm -f ${path.module}/.terraform-kubeconfig 2>/dev/null || true"
+  }
+}
 
 # Install External Secrets Operator and Workload Identity Webhook
 resource "terraform_data" "helm_install_eso" {
   provisioner "local-exec" {
     command     = <<EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
+      
       helm repo add azure-workload-identity https://azure.github.io/azure-workload-identity/charts || true
       helm repo update
       helm upgrade --install workload-identity-webhook azure-workload-identity/azure-workload-identity \
@@ -37,6 +71,7 @@ resource "terraform_data" "helm_install_eso" {
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
+  depends_on = [terraform_data.init_kubeconfig]
 }
 
 # ----------------------------------------------------------------------------------
@@ -59,8 +94,7 @@ resource "terraform_data" "wait_for_crds" {
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
       
       # Wait for CRDs to be available
       echo "Waiting for External Secrets CRDs to be available..."
@@ -111,8 +145,7 @@ resource "terraform_data" "service_account" {
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
       
       kubectl -n ${var.namespace} apply -f - <<EOF
 apiVersion: v1
@@ -170,8 +203,7 @@ resource "terraform_data" "cluster_secret_store" {
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
       
       # Wait for External Secrets Operator webhook to be ready
       echo "Waiting for External Secrets Operator webhook to be ready..."
@@ -251,8 +283,7 @@ resource "terraform_data" "external_secret" {
   provisioner "local-exec" {
     command     = <<EOT
       set -e
-      az account set --subscription ${var.subscription_id}
-      az aks get-credentials --resource-group ${var.resource_group_name} --name ${var.aks_cluster_name} --overwrite-existing
+      export KUBECONFIG="${local.kubeconfig_path}"
       
       # Ensure namespace exists
       kubectl get ns ${var.app_namespace} >/dev/null 2>&1 || kubectl create ns ${var.app_namespace}
@@ -314,6 +345,36 @@ spec:
   - secretKey: oidc.clientSecret
     remoteRef:
       key: oidc-clientSecret
+  - secretKey: azure.openai.endpoint
+    remoteRef:
+      key: azure-openai-endpoint
+  - secretKey: azure.openai.apiKey
+    remoteRef:
+      key: azure-openai-apiKey
+  - secretKey: azure.openai.deploymentName
+    remoteRef:
+      key: azure-openai-deploymentName
+  - secretKey: azure.openai.apiVersion
+    remoteRef:
+      key: azure-openai-apiVersion
+  - secretKey: azure.openai.embeddingDeployment
+    remoteRef:
+      key: azure-openai-embeddingDeployment
+  - secretKey: azure.aiSearch.endpoint
+    remoteRef:
+      key: azure-aiSearch-endpoint
+  - secretKey: azure.aiSearch.apiKey
+    remoteRef:
+      key: azure-aiSearch-apiKey
+  - secretKey: azure.aiSearch.indexName
+    remoteRef:
+      key: azure-aiSearch-indexName
+  - secretKey: dataSource.alphaVantage.apiKey
+    remoteRef:
+      key: dataSource-alphaVantage-apiKey
+  - secretKey: dataSource.finnhub.apiKey
+    remoteRef:
+      key: dataSource-finnhub-apiKey
 YAML_EOF
       
       # Apply ExternalSecret with retry logic
