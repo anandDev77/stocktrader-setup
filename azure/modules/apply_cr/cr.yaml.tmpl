@@ -309,16 +309,16 @@ spec:
     autoscale: false
     cpuThreshold: 75
     image:
-      repository: ghcr.io/ananddev77/stock-sentiment-api
-      tag: sentimentanalysis-f903fe8
+      repository: ghcr.io/ibmstocktrader/stock-sentiment-analysis
+      tag: 1.0.0
     maxReplicas: 10
     replicas: 1
     url: http://{{ .Release.Name }}-sentiment-api-service:8000
     dashboard:
       enabled: ${sentiment_enabled}
       image:
-        repository: ghcr.io/ananddev77/stock-sentiment-dashboard
-        tag: sentimentanalysis-f903fe8
+        repository: ghcr.io/ibmstocktrader/stock-sentiment-analysis-dashboard
+        tag: 1.0.0
     dashboardUrl: /sentiment-dashboard  # Istio gateway path (relative path works from same origin as trader)
   # Azure OpenAI - apiKey comes from Key Vault via ESO
   # endpoint is set via Terraform sentiment_services module

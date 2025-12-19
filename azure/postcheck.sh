@@ -44,6 +44,12 @@ STOCK_TRADER_NAMESPACE=$(grep '^stock_trader_namespace' terraform.tfvars | awk -
 COUCHDB_NAMESPACE=$(grep '^couchdb_namespace' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "couchdb")
 EXTERNAL_SECRETS_NAMESPACE=$(grep '^external_secrets_namespace' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "external-secrets")
 
+# Sentiment Dashboard configuration
+ENABLE_SENTIMENT=$(grep '^enable_sentiment_dashboard' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "false")
+SENTIMENT_RG=$(grep '^sentiment_resource_group_name' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "")
+SENTIMENT_OPENAI_NAME=$(grep '^sentiment_openai_service_name' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "stock-sentiment-openai")
+SENTIMENT_SEARCH_NAME=$(grep '^sentiment_search_service_name' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "stock-sentiment-search")
+
 # Read dynamic values from terraform outputs
 echo "Getting Terraform outputs..."
 POSTGRES_FQDN=$(terraform output -raw postgres_fqdn 2>/dev/null || echo "")
@@ -433,6 +439,88 @@ else
 fi
 
 # ------------------------------------------------------------------------------
+# Check Sentiment Dashboard (if enabled)
+# ------------------------------------------------------------------------------
+if [ "$ENABLE_SENTIMENT" = "true" ]; then
+  echo -e "\n${CYAN}🤖 Checking Sentiment Analysis Dashboard...${NC}"
+  
+  # Check Azure OpenAI Service
+  if [ -n "$SENTIMENT_RG" ]; then
+    echo -e "${CYAN}📡 Checking Azure OpenAI Service...${NC}"
+    if az cognitiveservices account show --name "$SENTIMENT_OPENAI_NAME" --resource-group "$SENTIMENT_RG" > /dev/null 2>&1; then
+      OPENAI_STATUS=$(az cognitiveservices account show --name "$SENTIMENT_OPENAI_NAME" --resource-group "$SENTIMENT_RG" --query provisioningState -o tsv 2>/dev/null || echo "Unknown")
+      if [ "$OPENAI_STATUS" = "Succeeded" ]; then
+        echo -e "${GREEN}✅ Azure OpenAI '$SENTIMENT_OPENAI_NAME' is ready${NC}"
+      else
+        echo -e "${YELLOW}⚠️  Azure OpenAI '$SENTIMENT_OPENAI_NAME' status: $OPENAI_STATUS${NC}"
+      fi
+      
+      # Check deployments
+      OPENAI_DEPLOYMENTS=$(az cognitiveservices account deployment list --name "$SENTIMENT_OPENAI_NAME" --resource-group "$SENTIMENT_RG" --query "[].name" -o tsv 2>/dev/null || echo "")
+      if [ -n "$OPENAI_DEPLOYMENTS" ]; then
+        echo -e "${GREEN}✅ Azure OpenAI deployments: $(echo $OPENAI_DEPLOYMENTS | tr '\n' ', ')${NC}"
+      else
+        echo -e "${YELLOW}⚠️  No Azure OpenAI model deployments found${NC}"
+      fi
+    else
+      echo -e "${YELLOW}⚠️  Azure OpenAI '$SENTIMENT_OPENAI_NAME' not found in '$SENTIMENT_RG'${NC}"
+    fi
+    
+    # Check Azure AI Search Service
+    echo -e "${CYAN}🔍 Checking Azure AI Search Service...${NC}"
+    if az search service show --name "$SENTIMENT_SEARCH_NAME" --resource-group "$SENTIMENT_RG" > /dev/null 2>&1; then
+      SEARCH_STATUS=$(az search service show --name "$SENTIMENT_SEARCH_NAME" --resource-group "$SENTIMENT_RG" --query status -o tsv 2>/dev/null || echo "Unknown")
+      if [ "$SEARCH_STATUS" = "running" ]; then
+        echo -e "${GREEN}✅ Azure AI Search '$SENTIMENT_SEARCH_NAME' is running${NC}"
+      else
+        echo -e "${YELLOW}⚠️  Azure AI Search '$SENTIMENT_SEARCH_NAME' status: $SEARCH_STATUS${NC}"
+      fi
+    else
+      echo -e "${YELLOW}⚠️  Azure AI Search '$SENTIMENT_SEARCH_NAME' not found in '$SENTIMENT_RG'${NC}"
+    fi
+  fi
+  
+  # Check Sentiment API Pod
+  echo -e "${CYAN}📱 Checking Sentiment API...${NC}"
+  SENTIMENT_API_PODS=$(kubectl get pods -n "$STOCK_TRADER_NAMESPACE" -l app=sentiment-api --no-headers 2>/dev/null | wc -l)
+  SENTIMENT_API_READY=$(kubectl get pods -n "$STOCK_TRADER_NAMESPACE" -l app=sentiment-api --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "$SENTIMENT_API_PODS" -gt 0 ]; then
+    echo -e "${GREEN}✅ Sentiment API pods: $SENTIMENT_API_READY/$SENTIMENT_API_PODS running${NC}"
+    
+    # Check if API is healthy
+    API_POD=$(kubectl get pods -n "$STOCK_TRADER_NAMESPACE" -l app=sentiment-api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [ -n "$API_POD" ]; then
+      # Check container readiness
+      API_READY=$(kubectl get pod "$API_POD" -n "$STOCK_TRADER_NAMESPACE" -o jsonpath='{.status.containerStatuses[?(@.name=="sentiment-api")].ready}' 2>/dev/null || echo "false")
+      if [ "$API_READY" = "true" ]; then
+        echo -e "${GREEN}✅ Sentiment API is healthy and ready${NC}"
+      else
+        echo -e "${YELLOW}⚠️  Sentiment API container not ready${NC}"
+      fi
+    fi
+  else
+    echo -e "${YELLOW}⚠️  Sentiment API pods not found${NC}"
+  fi
+  
+  # Check Sentiment Dashboard Pod
+  echo -e "${CYAN}📊 Checking Sentiment Dashboard...${NC}"
+  SENTIMENT_DASH_PODS=$(kubectl get pods -n "$STOCK_TRADER_NAMESPACE" -l app=sentiment-dashboard --no-headers 2>/dev/null | wc -l)
+  SENTIMENT_DASH_READY=$(kubectl get pods -n "$STOCK_TRADER_NAMESPACE" -l app=sentiment-dashboard --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "$SENTIMENT_DASH_PODS" -gt 0 ]; then
+    echo -e "${GREEN}✅ Sentiment Dashboard pods: $SENTIMENT_DASH_READY/$SENTIMENT_DASH_PODS running${NC}"
+  else
+    echo -e "${YELLOW}⚠️  Sentiment Dashboard pods not found${NC}"
+  fi
+  
+  # Show Dashboard URL
+  if [ "$ENABLE_ISTIO" = "true" ] && [ -n "$ISTIO_EXTERNAL_IP" ] && [ "$ISTIO_EXTERNAL_IP" != "null" ]; then
+    echo -e "${BLUE}🤖 Sentiment Dashboard URL: https://$ISTIO_EXTERNAL_IP/sentiment-dashboard${NC}"
+  fi
+else
+  echo -e "\n${CYAN}🤖 Sentiment Analysis Dashboard: ${YELLOW}disabled${NC}"
+fi
+
+# ------------------------------------------------------------------------------
 # Check Istio Gateway and Get Application URL (only when Istio is enabled)
 # ------------------------------------------------------------------------------
 if [ "$ENABLE_ISTIO" = "true" ]; then
@@ -644,14 +732,27 @@ else
 fi
 echo -e "${GREEN}✅ Application pods are running${NC}"
 
+# Sentiment Dashboard summary
+if [ "$ENABLE_SENTIMENT" = "true" ]; then
+  echo -e "${GREEN}✅ Sentiment Dashboard is enabled${NC}"
+else
+  echo -e "${YELLOW}ℹ️  Sentiment Dashboard is disabled${NC}"
+fi
+
 # Use dynamic application URL from Terraform output or LoadBalancer service
 if [ "$ENABLE_ISTIO" = "true" ]; then
   if [ -n "$ISTIO_EXTERNAL_URL_HTTPS" ] && [ "$ISTIO_EXTERNAL_URL_HTTPS" != "null" ]; then
     echo -e "${BLUE}🌐 Application is accessible at: $ISTIO_EXTERNAL_URL_HTTPS/trader${NC}"
     echo -e "${BLUE}🔑 Default login: stock/trader${NC}"
+    if [ "$ENABLE_SENTIMENT" = "true" ]; then
+      echo -e "${BLUE}🤖 Sentiment Dashboard: $ISTIO_EXTERNAL_URL_HTTPS/sentiment-dashboard${NC}"
+    fi
   elif [ -n "$ISTIO_EXTERNAL_IP" ] && [ "$ISTIO_EXTERNAL_IP" != "null" ]; then
     echo -e "${BLUE}🌐 Application is accessible at: https://$ISTIO_EXTERNAL_IP/trader${NC}"
     echo -e "${BLUE}🔑 Default login: stock/trader${NC}"
+    if [ "$ENABLE_SENTIMENT" = "true" ]; then
+      echo -e "${BLUE}🤖 Sentiment Dashboard: https://$ISTIO_EXTERNAL_IP/sentiment-dashboard${NC}"
+    fi
   fi
 else
   # Check for LoadBalancer service when Istio is disabled
@@ -676,8 +777,15 @@ if [ "$ENABLE_ISTIO" = "true" ]; then
 else
   echo "  4. Check application services: kubectl get svc -n $STOCK_TRADER_NAMESPACE"
 fi
-echo "  5. Monitor Azure resources in the Azure portal"
+if [ "$ENABLE_SENTIMENT" = "true" ]; then
+  echo "  5. Try the Sentiment Dashboard for AI-powered stock analysis"
+  echo "  6. Monitor sentiment API logs: kubectl logs -n $STOCK_TRADER_NAMESPACE -l app=sentiment-api"
+fi
+echo "  7. Monitor Azure resources in the Azure portal"
 echo ""
 echo -e "${YELLOW}💡 To get the application URL anytime, run: make app-url${NC}"
+if [ "$ENABLE_SENTIMENT" = "true" ]; then
+  echo -e "${YELLOW}💡 To get the sentiment dashboard URL, run: make dashboard-url${NC}"
+fi
 echo -e "${YELLOW}💡 To check pod status: kubectl get pods -n $STOCK_TRADER_NAMESPACE${NC}"
 echo -e "${YELLOW}💡 To view application logs: kubectl logs -n $STOCK_TRADER_NAMESPACE -f deployment/stocktrader${NC}"

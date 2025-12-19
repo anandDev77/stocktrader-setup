@@ -21,6 +21,8 @@ make app-url
 - [Prerequisites](#prerequisites)
 - [Configure](#configure)
 - [Deploy](#deploy)
+  - [Istio Toggle](#istio-toggle)
+  - [Sentiment Analysis Dashboard (Optional)](#sentiment-analysis-dashboard-optional)
 - [Access the App](#access-the-app)
   - [Default Login](#default-login)
 - [Destroy](#destroy)
@@ -168,6 +170,71 @@ This repo supports deploying with or without Istio via the `enable_istio` variab
 - When `enable_istio = true` (default): Istio mesh and gateways are configured; `make app-url` prints the Istio ingress URL.
 - When `enable_istio = false`: Istio resources are skipped; `make app-url` prints the `gitops-stocktrader-trader-service` LoadBalancer URL in the form `https://<lb-ip>:9443/trader`.
 
+### Sentiment Analysis Dashboard (Optional)
+
+The Stock Trader application includes an optional AI-powered sentiment analysis dashboard that provides real-time stock sentiment insights using Azure OpenAI and Azure AI Search.
+
+#### Enabling the Sentiment Dashboard
+
+1. **Set up a separate Resource Group** for sentiment services (recommended for cost tracking and isolation):
+   ```bash
+   az group create --name rg-stocktrader-sentiment --location eastus
+   ```
+
+2. **Configure variables** in `terraform.tfvars`:
+   ```hcl
+   # Enable the sentiment dashboard
+   enable_sentiment_dashboard = true
+   
+   # REQUIRED: Resource group for sentiment services
+   sentiment_resource_group_name = "rg-stocktrader-sentiment"
+   
+   # Optional: Customize service names (defaults are fine)
+   # sentiment_openai_service_name = "stock-sentiment-openai"
+   # sentiment_search_service_name = "stock-sentiment-search"
+   ```
+
+3. **Deploy** with `make apply` - Azure OpenAI and AI Search will be provisioned automatically.
+
+4. **Access the dashboard**:
+   ```bash
+   make dashboard-url
+   ```
+
+#### Using Existing Azure OpenAI / AI Search
+
+If you already have Azure OpenAI or AI Search deployed in another resource group:
+
+```hcl
+# Use existing Azure OpenAI
+sentiment_use_existing_openai = true
+sentiment_existing_openai_name = "my-existing-openai"
+sentiment_existing_openai_resource_group = "my-ai-resource-group"
+
+# Use existing Azure AI Search
+sentiment_use_existing_search = true
+sentiment_existing_search_name = "my-existing-search"
+sentiment_existing_search_resource_group = "my-ai-resource-group"
+```
+
+#### Optional: Stock Data API Keys
+
+For richer sentiment analysis with additional data sources:
+```hcl
+# Alpha Vantage (free tier available): https://www.alphavantage.co/support/#api-key
+alpha_vantage_api_key = "YOUR-API-KEY"
+
+# Finnhub (free tier available): https://finnhub.io/register
+finnhub_api_key = "YOUR-API-KEY"
+```
+
+#### Sentiment Dashboard Features
+- Real-time stock sentiment analysis using GPT-4
+- RAG-enhanced context from Azure AI Search
+- Multi-source news aggregation (yfinance, Alpha Vantage, Finnhub)
+- Redis caching for improved performance
+- Interactive dashboard with sentiment visualization
+
 ### **Alternative: Manual Commands**
 If you prefer not to use Make targets:
 ```bash
@@ -194,7 +261,10 @@ This will check:
 - ✅ Redis connectivity
 - ✅ Key Vault secrets
 - ✅ Network connectivity (private endpoints, DNS)
+- ✅ Sentiment services (Azure OpenAI, AI Search) - if enabled
+- ✅ Sentiment API and Dashboard pods - if enabled
 - 🌐 Application URL and access credentials
+- 🌐 Sentiment Dashboard URL - if enabled
 
 ## Access the App
 - Use the Makefile helper to print the application URL:
@@ -226,6 +296,7 @@ make destroy
 ├── versions.tf               # Version constraints
 ├── tags.tf                   # Centralized tags
 ├── precheck.sh               # Prerequisite checker
+├── postcheck.sh              # Post-deployment verifier
 ├── terraform.tfvars.example  # Example config
 ├── ARCHITECTURE.md           # Deep-dive architecture and networking
 ├── public/
@@ -242,7 +313,11 @@ make destroy
     ├── k8s_bootstrap/        # OLM, operator install, namespace labels
     ├── postgres_init/        # DB schema init
     ├── apply_cr/             # Stock Trader CR + Istio Gateway/VS
-    └── couchdb/              # CouchDB on AKS
+    ├── couchdb/              # CouchDB on AKS
+    ├── sentiment_services/   # Azure OpenAI + AI Search (optional)
+    ├── key_vault/            # Azure Key Vault + secrets
+    ├── external_secrets/     # External Secrets Operator + sync
+    └── function_app/         # Azure Function App for stock quotes
 ```
 
 ## Variables (high-level)

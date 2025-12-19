@@ -21,6 +21,24 @@ Thumbs.db
 # Local outputs or artifacts
 output.txt
 
+# Generated kubeconfig files (isolated per module)
+**/.terraform-kubeconfig
+
+# Generated YAML files from templates
+azure/modules/apply_cr/cr_*.yaml
+azure/modules/apply_cr/istio_gateway_*.yaml
+azure/modules/apply_cr/peer-auth_*.yaml
+
+# Generated SSL certificates
+azure/modules/apply_cr/certs/
+
+# Sentiment services module - generated API key files
+azure/modules/sentiment_services/.openai_key
+azure/modules/sentiment_services/.search_key
+
+# Function app build artifacts
+azure/modules/function_app/build/
+
 # Local .terraform directories
 .terraform/
 
@@ -58,3 +76,18 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+wordDoc/Figure 9- Terraform plan showing resources to create.png
+wordDoc/Figure 8- Complete Terraform execution flow.png
+wordDoc/Figure 7.png
+wordDoc/Figure 6- postcheck.sh verifying all components-3.png
+wordDoc/Figure 6- postcheck.sh verifying all components-2.png
+wordDoc/Figure 6- postcheck.sh verifying all components-1.png
+wordDoc/Figure 5.png
+wordDoc/Figure 4- precheck.sh validating environment-2.png
+wordDoc/Figure 4- precheck.sh validating environment-1.png
+wordDoc/Figure 4- Module dependencies and execution order.png
+wordDoc/Figure 3- Terraform project structure.png
+wordDoc/Figure 2- Stock Trader pods running with Istio sidecars.png
+wordDoc/Figure 1- Deployment in progress.png
+TERRAFORM_SCRIPT_GUIDE.md
+TERRAFORM_SCRIPT_GUIDE.docx

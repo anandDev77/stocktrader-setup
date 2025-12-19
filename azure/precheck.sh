@@ -290,6 +290,71 @@ grep -v '^ *#' terraform.tfvars | grep -v '^ *$' | while IFS='=' read -r key val
 done
 
 # ------------------------------------------------------------------------------
+# Check Sentiment Dashboard Configuration (if enabled)
+# ------------------------------------------------------------------------------
+ENABLE_SENTIMENT=$(grep '^enable_sentiment_dashboard' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "false")
+SENTIMENT_RG=$(grep '^sentiment_resource_group_name' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "")
+SENTIMENT_OPENAI_NAME=$(grep '^sentiment_openai_service_name' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "stock-sentiment-openai")
+SENTIMENT_SEARCH_NAME=$(grep '^sentiment_search_service_name' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "stock-sentiment-search")
+USE_EXISTING_OPENAI=$(grep '^sentiment_use_existing_openai' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "false")
+USE_EXISTING_SEARCH=$(grep '^sentiment_use_existing_search' terraform.tfvars | awk -F= '{print $2}' | cut -d'#' -f1 | tr -d ' "' 2>/dev/null || echo "false")
+
+if [ "$ENABLE_SENTIMENT" = "true" ]; then
+  echo -e "\n${CYAN}🤖 Checking Sentiment Dashboard Configuration...${NC}"
+  
+  # Check if sentiment resource group is specified
+  if [ -z "$SENTIMENT_RG" ]; then
+    echo -e "${RED}❌ sentiment_resource_group_name is required when enable_sentiment_dashboard = true${NC}"
+    echo "   Please set sentiment_resource_group_name in terraform.tfvars"
+    exit 1
+  fi
+  
+  # Check if sentiment resource group exists
+  if ! az group show --name "$SENTIMENT_RG" > /dev/null 2>&1; then
+    echo -e "${RED}❌ Sentiment resource group '$SENTIMENT_RG' does not exist.${NC}"
+    echo "   Please create it with: az group create --name '$SENTIMENT_RG' --location '$LOCATION'"
+    exit 1
+  fi
+  echo -e "${GREEN}✅ Sentiment resource group '$SENTIMENT_RG' exists${NC}"
+  
+  # Check for soft-deleted Azure OpenAI resources (if creating new)
+  if [ "$USE_EXISTING_OPENAI" != "true" ]; then
+    echo -e "${CYAN}🔍 Checking for soft-deleted Azure OpenAI resources...${NC}"
+    DELETED_OPENAI=$(az cognitiveservices account list-deleted --query "[?name=='$SENTIMENT_OPENAI_NAME'].name" -o tsv 2>/dev/null || echo "")
+    if [ -n "$DELETED_OPENAI" ]; then
+      echo -e "${YELLOW}⚠️  Found soft-deleted Azure OpenAI resource '$SENTIMENT_OPENAI_NAME'${NC}"
+      echo "   This may cause deployment to fail. You can purge it with:"
+      echo "   az cognitiveservices account purge --name '$SENTIMENT_OPENAI_NAME' --resource-group '$SENTIMENT_RG' --location '$LOCATION'"
+      read -p '   Do you want to purge it now? (y/n): ' PURGE_CONFIRM
+      if [[ "$PURGE_CONFIRM" == "y" ]]; then
+        echo "   Purging soft-deleted Azure OpenAI resource..."
+        az cognitiveservices account purge --name "$SENTIMENT_OPENAI_NAME" --resource-group "$SENTIMENT_RG" --location "$LOCATION" 2>/dev/null || true
+        echo -e "${GREEN}✅ Soft-deleted Azure OpenAI resource purged${NC}"
+      fi
+    else
+      echo -e "${GREEN}✅ No soft-deleted Azure OpenAI resources found${NC}"
+    fi
+  fi
+  
+  # Check for soft-deleted Azure AI Search resources (if creating new)
+  if [ "$USE_EXISTING_SEARCH" != "true" ]; then
+    echo -e "${CYAN}🔍 Checking for soft-deleted Azure AI Search resources...${NC}"
+    # Note: Azure AI Search doesn't have soft-delete like Cognitive Services, but check if name is taken
+    EXISTING_SEARCH=$(az search service list --query "[?name=='$SENTIMENT_SEARCH_NAME'].name" -o tsv 2>/dev/null || echo "")
+    if [ -n "$EXISTING_SEARCH" ]; then
+      echo -e "${YELLOW}⚠️  Azure AI Search service '$SENTIMENT_SEARCH_NAME' already exists${NC}"
+      echo "   Consider using a different name or set sentiment_use_existing_search = true"
+    else
+      echo -e "${GREEN}✅ Azure AI Search service name '$SENTIMENT_SEARCH_NAME' is available${NC}"
+    fi
+  fi
+  
+  echo -e "${GREEN}✅ Sentiment Dashboard configuration validated${NC}"
+else
+  echo -e "\n${CYAN}🤖 Sentiment Dashboard: ${YELLOW}disabled${NC}"
+fi
+
+# ------------------------------------------------------------------------------
 # Check for resource name uniqueness in the subscription
 # ------------------------------------------------------------------------------
 echo -e "\n${CYAN}🔍 Checking resource name uniqueness...${NC}"
